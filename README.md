@@ -16,13 +16,13 @@
 - state1funcDI.m, state2funcDI : state functions based on thermodynamic model with interpolated thrust at ode45 timesteps
 
 [ Monte Carlo Simulations ] 
-monte.m : normally distributed initial conditions, runs through models 1 & 2 with set number of trials
-monteMain.m : runs monte carlo simulation and plots error ellipses, returns averages to estimate rocket launch within percentile categories
-fileLoad.m : loads a file, specific to static test stand data, converts to newtons
-dataRead.m : reads multiple static test stand file data, modifies with tolerence slope check, zero removal, and 4x scaled shift on mean                  negative values, performs limited statistical analysis on fitted isp models
+- monte.m : normally distributed initial conditions, runs through models 1 & 2 with set number of trials
+- monteMain.m : runs monte carlo simulation and plots error ellipses, returns averages to estimate rocket launch within percentile categories
+- fileLoad.m : loads a file, specific to static test stand data, converts to newtons
+- dataRead.m : reads multiple static test stand file data, modifies with tolerence slope check, zero removal, and 4x scaled shift on mean                  negative values, performs limited statistical analysis on fitted isp models
 
 [ Sensitivity Analysis ]
-SensAnalysis.m : performs sensitivity analysis on certain alterable initial conditions, plots to find the best possible initial condition
+- SensAnalysis.m : performs sensitivity analysis on certain alterable initial conditions, plots to find the best possible initial condition
 
 ## Background Information
 
