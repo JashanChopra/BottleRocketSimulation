@@ -1,0 +1,666 @@
+%% ASEN 2004 - Rocket Bottle Lab - Main Code
+%{
+    Authors: Jashan Chopra (107689146), Dom Dougherty (106073184)
+    Adapted from 2012 Project 2 
+    Date Created: March 20th, 2018
+
+[ THERMODYNAMIC MODEL - Model 1 ]
+    
+Script Purposes and goals:
+    1) Combine best aspects of Jashan & Sasha's original 2012 code
+        Specifically fancy plotting features
+    2) Adjust code to incorporate the heading velocity vector
+    3) Adjust code to incorporate affects of wind in heading velocity
+    4) Sensitivity Analysis on multiple variables to determine improvments
+    5) Convert the plots to 3D to predict exact trajectory of launch
+
+Outputs:
+    1) Final Distance
+    2) Max Height
+    3) Total Time
+    4) Angle Deviation from launch
+
+%}
+
+% General Housekeeping
+clc; clear; close all; 
+%% Identify Constants
+% Given Constants
+g=9.81; %[m/s] % Gravity Constant
+Cd=.8; % Dischart Coefficient
+rhoAtm=.961;    %[kg/m3] % Ambient Air Density
+rhoWater=1000;  %[kg/m3] % Density of Water
+volBottle=.002;   %[m^3] % Empty bottle Volume
+Patm=83427; %[Pa] % Atmospheric Pressure
+gamma=1.4; % Ratio of Specific Heats for Air
+Dthroat=.021;   %[m] % Diameter of Throat
+Dbottle=.105;   %[m] % Diameter of Bottle 
+R=287; % Universal Gas Constant Air
+mBottle=.15;    %[kg] % Mass of Empty Bottle
+CDrag=.5; % Drag Coefficient
+volWater=.001;  %[m^3] % Initial Volume of Water
+Tair=300;   %[K] % Initital Temp of Air
+v0=0; % [m/s] Initial Velocity
+theta=pi/4;   %[rad] % Initial Angle
+ls=.5;   %[m] % Length of Test Stand
+
+x0=0;   %[m] % Initial Horizontal Distance
+z0=.25; %[m] % Initial Vertical Distance
+y0 = 0; %[m] % Initial Lateral Distance
+
+% Calculated Constants
+%% Vary Pgage
+for i = 0:1:40
+Pgage(i+1) = 137895 + 3447.38*i;
+volAir=volBottle-volWater; % Volume of air in Bottle Initial
+mAir=((Pgage(i+1)+Patm)*volAir)/(R*Tair); % Mass of Air Initital
+Athroat=pi*(Dthroat/2)^2; % Area of Throat 
+Abottle=pi*(Dbottle/2)^2; % Area of Bottle
+
+mWater = rhoWater * volWater; % Initial mass of water
+
+vw = [0;0;0]; % Initial velocity of the wind [Note these are negative because they add later]
+
+vx = 0 + vw(1); % Initial Velocity x
+vy = 0 + vw(2); % Initial Velocity y
+vz = 0 + vw(3); % Initial Velocity z
+
+%% Phase 1
+
+% First we create a state vector to put into ode45
+% [Volume Air, Velocities(x,y,z), Distances(x,y,z)
+state1Vec = [volAir vx vz vy x0 z0 y0]; 
+
+% Manual timestep helps ode45 accuracy
+tspan = 0:.00001:.5; % Create a time span, 0 to .5 seconds
+
+% Odeset triggers a cancel event in ode45
+optstage1 = odeset('Events',@opt1); % opt1.m outputs the cancel signal
+
+% Call to ode45 with state1func,state1vec,tspan, and optstage1
+[t, ds] = ode45(@(t,s) state1func(t,s,Cd,Athroat,gamma,...
+    rhoAtm,Patm,Pgage(i+1),volAir,Abottle,mBottle,mAir,CDrag,volBottle,...
+    rhoWater,vw), tspan, state1Vec, optstage1);
+
+% Initialize a vector of thrust values
+Fthrust=zeros(1,length(t));
+
+% For each value in the first time vector, we run the state func with our
+% full state matrix to get the thrust
+for z=1:length(t)
+    in1=t(z); % Time value at any time
+    in2=ds(z,:); % Row of the state matrix for time
+    [~,Fthrust(z)] = state1func(in1,in2,Cd,Athroat,gamma,rhoAtm,Patm,Pgage(i+1),volAir,...
+    Abottle,mBottle,mAir,CDrag,volBottle,rhoWater,vw);
+end
+
+%% Phase 2 
+% Define a new variable just to avoid confusion with initial mass of air
+m2 = mAir;
+Pair = Pgage(i+1) + Patm; % Defines pressure of air inside bottle 
+
+% Initialize the second state vector based off previous conditions
+% [ mass_air x-vel z-vel y-vel dist-x dist-z dist-y]
+state2Vec = [m2;ds(end,2);ds(end,3);ds(end,4);ds(end,5);ds(end,6);ds(end,7)];
+
+% Time span for ode45
+tspan2 = t(end):.000001:6;
+
+% Call to ode45 for the second stage, similar to before
+optstage2 = odeset('Events',@opt2); % This function modifies ode45 to stop
+[t2,ds2] = ode45(@(t2,s) state2func(t2,s,mAir,gamma,Pair,volBottle,R,Patm,...
+    Athroat,Cd,Abottle,rhoAtm,volAir,CDrag,mBottle),tspan2, state2Vec,optstage2);
+
+% Exact same process as before, but for stage 2
+Fthrust2=zeros(1,length(t2));
+beta = zeros(1,length(t2)); % Also gets beta this time around 
+
+for z=1:length(t2)
+    in3=t2(z);
+    in4=ds2(z,:);
+    [~,Fthrust2(z),beta(z)] = state2func(in3,in4,mAir,gamma,Pair,volBottle,R,Patm,...
+    Athroat,Cd,Abottle,rhoAtm,volAir,CDrag,mBottle);
+end
+
+%% Plot Thrust
+figure(1) % Opens the first figure
+% Concatenate two stages
+timebot = [t;t2];
+thrusttotal = [Fthrust Fthrust2];
+
+% Plot the time v. thrust
+p = plot(timebot,thrusttotal);
+p.LineWidth = 2;
+title('Thrust Diagram') % Title
+xlabel('Time [Seconds]') % X label
+ylabel('Thrust [N]') % Y label
+xlim([0 .45]) % Shortens the x axis to avoid misc 0 values of thrust
+hold on
+%% Plot Distances
+figure(2) % Opens second figure
+
+% Remove values where z has gone below the surface of the Earth
+indices = find(ds2(:,6) < 0);
+ds2(indices,:) = [];
+
+% Concatenate two stages
+xpos=[ds(:,5);ds2(:,5)]; 
+zpos=[ds(:,6);ds2(:,6)];
+ypos=[ds(:,7);ds2(:,7)];
+
+p = plot3(xpos,ypos,zpos); % Plot height v. distance
+p.LineWidth = 2;
+title('Height v. Distance') % Title
+xlabel('Distance') % X label
+ylabel('Lateral Distance') % Y label
+zlabel('Height') % Z Label
+hold on
+
+figure(3)
+distancePG(i+1) = ds2(end,5);
+plot(Pgage(i+1), distancePG(i+1), '*')
+xlabel('Gage Pressure (Pa)')
+ylabel('Distance (m)')
+title('Air Pressure in Rocket vs. Distance Traveled')
+axis([137000 280000 0 100])
+hold on
+end
+maxDPG = max(distancePG);
+idealPG = Pgage(find(distancePG == maxDPG));
+
+%% Vary volWater
+Pgage = [];
+Pgage = idealPG;
+
+for i = 0:1:5
+volWater(i+1)=0.0005 + 0.000025*(2*i);  %[m^3] % Initial Volume of Water
+volAir=volBottle-volWater(i+1); % Volume of air in Bottle Initial
+mAir=((Pgage+Patm)*volAir)/(R*Tair); % Mass of Air Initital
+Athroat=pi*(Dthroat/2)^2; % Area of Throat 
+Abottle=pi*(Dbottle/2)^2; % Area of Bottle
+
+mWater = rhoWater * volWater(i+1); % Initial mass of water
+
+vw = [0;0;0]; % Initial velocity of the wind [Note these are negative because they add later]
+
+vx = 0 + vw(1); % Initial Velocity x
+vy = 0 + vw(2); % Initial Velocity y
+vz = 0 + vw(3); % Initial Velocity z
+
+%% Phase 1
+
+% First we create a state vector to put into ode45
+% [Volume Air, Velocities(x,y,z), Distances(x,y,z)
+state1Vec = [volAir vx vz vy x0 z0 y0]; 
+
+% Manual timestep helps ode45 accuracy
+tspan = 0:.00001:.5; % Create a time span, 0 to .5 seconds
+
+% Odeset triggers a cancel event in ode45
+optstage1 = odeset('Events',@opt1); % opt1.m outputs the cancel signal
+
+% Call to ode45 with state1func,state1vec,tspan, and optstage1
+[t, ds] = ode45(@(t,s) state1func(t,s,Cd,Athroat,gamma,...
+    rhoAtm,Patm,Pgage,volAir,Abottle,mBottle,mAir,CDrag,volBottle,...
+    rhoWater,vw), tspan, state1Vec, optstage1);
+
+% Initialize a vector of thrust values
+Fthrust=zeros(1,length(t));
+
+% For each value in the first time vector, we run the state func with our
+% full state matrix to get the thrust
+for z=1:length(t)
+    in1=t(z); % Time value at any time
+    in2=ds(z,:); % Row of the state matrix for time
+    [~,Fthrust(z)] = state1func(in1,in2,Cd,Athroat,gamma,rhoAtm,Patm,Pgage,volAir,...
+    Abottle,mBottle,mAir,CDrag,volBottle,rhoWater,vw);
+end
+
+%% Phase 2 
+% Define a new variable just to avoid confusion with initial mass of air
+m2 = mAir;
+Pair = Pgage + Patm; % Defines pressure of air inside bottle 
+
+% Initialize the second state vector based off previous conditions
+% [ mass_air x-vel z-vel y-vel dist-x dist-z dist-y]
+state2Vec = [m2;ds(end,2);ds(end,3);ds(end,4);ds(end,5);ds(end,6);ds(end,7)];
+
+% Time span for ode45
+tspan2 = t(end):.000001:6;
+
+% Call to ode45 for the second stage, similar to before
+optstage2 = odeset('Events',@opt2); % This function modifies ode45 to stop
+[t2,ds2] = ode45(@(t2,s) state2func(t2,s,mAir,gamma,Pair,volBottle,R,Patm,...
+    Athroat,Cd,Abottle,rhoAtm,volAir,CDrag,mBottle),tspan2, state2Vec,optstage2);
+
+% Exact same process as before, but for stage 2
+Fthrust2=zeros(1,length(t2));
+beta = zeros(1,length(t2)); % Also gets beta this time around 
+
+for y=1:length(t2)
+    in3=t2(y);
+    in4=ds2(y,:);
+    [~,Fthrust2(y),beta(y)] = state2func(in3,in4,mAir,gamma,Pair,volBottle,R,Patm,...
+    Athroat,Cd,Abottle,rhoAtm,volAir,CDrag,mBottle);
+end
+
+%% Plot Thrust
+figure(4) % Opens the first figure
+% Concatenate two stages
+timebot = [t;t2];
+thrusttotal = [Fthrust Fthrust2];
+
+% Plot the time v. thrust
+p = plot(timebot,thrusttotal);
+p.LineWidth = 2;
+title('Thrust Diagram') % Title
+xlabel('Time [Seconds]') % X label
+ylabel('Thrust [N]') % Y label
+xlim([0 .45]) % Shortens the x axis to avoid misc 0 values of thrust
+hold on
+%% Plot Distances
+figure(5) % Opens second figure
+
+% Remove values where z has gone below the surface of the Earth
+indices = find(ds2(:,6) < 0);
+ds2(indices,:) = [];
+
+% Concatenate two stages
+xpos=[ds(:,5);ds2(:,5)]; 
+zpos=[ds(:,6);ds2(:,6)];
+ypos=[ds(:,7);ds2(:,7)];
+
+p = plot3(xpos,ypos,zpos); % Plot height v. distance
+p.LineWidth = 2;
+title('Height v. Distance') % Title
+xlabel('Distance') % X label
+ylabel('Lateral Distance') % Y label
+zlabel('Height') % Z Label
+hold on
+
+figure(6)
+distanceVW(i+1) = ds2(end,5);
+plot(volWater(i+1), distanceVW(i+1), '-*')
+xlabel('Volume of Water (m^3)')
+ylabel('Distance (m)')
+title('Volume of Water in Rocket vs. Distance Traveled')
+axis([0 .002 0 100])
+hold on
+end
+maxDVW = max(distanceVW);
+idealVW = volWater(find(distanceVW == maxDVW));
+
+% Vary Tair
+volWater = [];
+volWater = idealVW;
+for i = 0:1:20
+Tair(i+1) = 273.15 + 2.5*(2*i);  %[m^3] % Initial Volume of Water
+volAir=volBottle-volWater; % Volume of air in Bottle Initial
+mAir=((Pgage+Patm)*volAir)/(R*Tair(i+1)); % Mass of Air Initital
+Athroat=pi*(Dthroat/2)^2; % Area of Throat 
+Abottle=pi*(Dbottle/2)^2; % Area of Bottle
+
+mWater = rhoWater * volWater; % Initial mass of water
+
+vw = [0;0;0]; % Initial velocity of the wind [Note these are negative because they add later]
+
+vx = 0 + vw(1); % Initial Velocity x
+vy = 0 + vw(2); % Initial Velocity y
+vz = 0 + vw(3); % Initial Velocity z
+
+%% Phase 1
+
+% First we create a state vector to put into ode45
+% [Volume Air, Velocities(x,y,z), Distances(x,y,z)
+state1Vec = [volAir vx vz vy x0 z0 y0]; 
+
+% Manual timestep helps ode45 accuracy
+tspan = 0:.00001:.5; % Create a time span, 0 to .5 seconds
+
+% Odeset triggers a cancel event in ode45
+optstage1 = odeset('Events',@opt1); % opt1.m outputs the cancel signal
+
+% Call to ode45 with state1func,state1vec,tspan, and optstage1
+[t, ds] = ode45(@(t,s) state1func(t,s,Cd,Athroat,gamma,...
+    rhoAtm,Patm,Pgage,volAir,Abottle,mBottle,mAir,CDrag,volBottle,...
+    rhoWater,vw), tspan, state1Vec, optstage1);
+
+% Initialize a vector of thrust values
+Fthrust=zeros(1,length(t));
+
+% For each value in the first time vector, we run the state func with our
+% full state matrix to get the thrust
+for z=1:length(t)
+    in1=t(z); % Time value at any time
+    in2=ds(z,:); % Row of the state matrix for time
+    [~,Fthrust(z)] = state1func(in1,in2,Cd,Athroat,gamma,rhoAtm,Patm,Pgage,volAir,...
+    Abottle,mBottle,mAir,CDrag,volBottle,rhoWater,vw);
+end
+
+%% Phase 2 
+% Define a new variable just to avoid confusion with initial mass of air
+m2 = mAir;
+Pair = Pgage + Patm; % Defines pressure of air inside bottle 
+
+% Initialize the second state vector based off previous conditions
+% [ mass_air x-vel z-vel y-vel dist-x dist-z dist-y]
+state2Vec = [m2;ds(end,2);ds(end,3);ds(end,4);ds(end,5);ds(end,6);ds(end,7)];
+
+% Time span for ode45
+tspan2 = t(end):.000001:6;
+
+% Call to ode45 for the second stage, similar to before
+optstage2 = odeset('Events',@opt2); % This function modifies ode45 to stop
+[t2,ds2] = ode45(@(t2,s) state2func(t2,s,mAir,gamma,Pair,volBottle,R,Patm,...
+    Athroat,Cd,Abottle,rhoAtm,volAir,CDrag,mBottle),tspan2, state2Vec,optstage2);
+
+% Exact same process as before, but for stage 2
+Fthrust2=zeros(1,length(t2));
+beta = zeros(1,length(t2)); % Also gets beta this time around 
+
+for y=1:length(t2)
+    in3=t2(y);
+    in4=ds2(y,:);
+    [~,Fthrust2(y),beta(y)] = state2func(in3,in4,mAir,gamma,Pair,volBottle,R,Patm,...
+    Athroat,Cd,Abottle,rhoAtm,volAir,CDrag,mBottle);
+end
+
+%% Plot Thrust
+figure(7) % Opens the first figure
+% Concatenate two stages
+timebot = [t;t2];
+thrusttotal = [Fthrust Fthrust2];
+
+% Plot the time v. thrust
+p = plot(timebot,thrusttotal);
+p.LineWidth = 2;
+title('Thrust Diagram') % Title
+xlabel('Time [Seconds]') % X label
+ylabel('Thrust [N]') % Y label
+xlim([0 .45]) % Shortens the x axis to avoid misc 0 values of thrust
+hold on
+%% Plot Distances
+figure(8) % Opens second figure
+
+% Remove values where z has gone below the surface of the Earth
+indices = find(ds2(:,6) < 0);
+ds2(indices,:) = [];
+
+% Concatenate two stages
+xpos=[ds(:,5);ds2(:,5)]; 
+zpos=[ds(:,6);ds2(:,6)];
+ypos=[ds(:,7);ds2(:,7)];
+
+p = plot3(xpos,ypos,zpos); % Plot height v. distance
+p.LineWidth = 2;
+title('Height v. Distance') % Title
+xlabel('Distance') % X label
+ylabel('Lateral Distance') % Y label
+zlabel('Height') % Z Label
+hold on
+
+figure(9)
+distanceTA(i+1) = ds2(end,5);
+plot(Tair(i+1), distanceTA(i+1), '-*')
+xlabel('Temperature of Air (k)')
+ylabel('Distance (m)')
+title('Temperature of Air in Rocket vs. Distance Traveled')
+axis([270 400 0 100])
+hold on
+end
+maxDTA = max(distanceTA);
+idealTA = volWater(find(distanceTA == maxDTA));
+
+% Vary Theta
+Tair = [];
+Tair = 273;
+for i = 0:1:20
+Theta(i+1) = 20+1.5*(2*i);  %[m^3] % Initial Volume of Water
+volAir=volBottle-volWater; % Volume of air in Bottle Initial
+mAir=((Pgage+Patm)*volAir)/(R*Tair); % Mass of Air Initital
+Athroat=pi*(Dthroat/2)^2; % Area of Throat 
+Abottle=pi*(Dbottle/2)^2; % Area of Bottle
+
+mWater = rhoWater * volWater; % Initial mass of water
+
+vw = [0;0;0]; % Initial velocity of the wind [Note these are negative because they add later]
+
+vx = 0 + vw(1); % Initial Velocity x
+vy = 0 + vw(2); % Initial Velocity y
+vz = 0 + vw(3); % Initial Velocity z
+
+%% Phase 1
+
+% First we create a state vector to put into ode45
+% [Volume Air, Velocities(x,y,z), Distances(x,y,z)
+state1Vec = [volAir vx vz vy x0 z0 y0]; 
+
+% Manual timestep helps ode45 accuracy
+tspan = 0:.00001:.5; % Create a time span, 0 to .5 seconds
+
+% Odeset triggers a cancel event in ode45
+optstage1 = odeset('Events',@opt1); % opt1.m outputs the cancel signal
+
+% Call to ode45 with state1func,state1vec,tspan, and optstage1
+[t, ds] = ode45(@(t,s) state1func(t,s,Cd,Athroat,gamma,...
+    rhoAtm,Patm,Pgage,volAir,Abottle,mBottle,mAir,CDrag,volBottle,...
+    rhoWater,vw), tspan, state1Vec, optstage1);
+
+% Initialize a vector of thrust values
+Fthrust=zeros(1,length(t));
+
+% For each value in the first time vector, we run the state func with our
+% full state matrix to get the thrust
+for z=1:length(t)
+    in1=t(z); % Time value at any time
+    in2=ds(z,:); % Row of the state matrix for time
+    [~,Fthrust(z)] = state1func(in1,in2,Cd,Athroat,gamma,rhoAtm,Patm,Pgage,volAir,...
+    Abottle,mBottle,mAir,CDrag,volBottle,rhoWater,vw);
+end
+
+%% Phase 2 
+% Define a new variable just to avoid confusion with initial mass of air
+m2 = mAir;
+Pair = Pgage + Patm; % Defines pressure of air inside bottle 
+
+% Initialize the second state vector based off previous conditions
+% [ mass_air x-vel z-vel y-vel dist-x dist-z dist-y]
+state2Vec = [m2;ds(end,2);ds(end,3);ds(end,4);ds(end,5);ds(end,6);ds(end,7)];
+
+% Time span for ode45
+tspan2 = t(end):.000001:6;
+
+% Call to ode45 for the second stage, similar to before
+optstage2 = odeset('Events',@opt2); % This function modifies ode45 to stop
+[t2,ds2] = ode45(@(t2,s) state2func(t2,s,mAir,gamma,Pair,volBottle,R,Patm,...
+    Athroat,Cd,Abottle,rhoAtm,volAir,CDrag,mBottle),tspan2, state2Vec,optstage2);
+
+% Exact same process as before, but for stage 2
+Fthrust2=zeros(1,length(t2));
+beta = zeros(1,length(t2)); % Also gets beta this time around 
+
+for y=1:length(t2)
+    in3=t2(y);
+    in4=ds2(y,:);
+    [~,Fthrust2(y),beta(y)] = state2func(in3,in4,mAir,gamma,Pair,volBottle,R,Patm,...
+    Athroat,Cd,Abottle,rhoAtm,volAir,CDrag,mBottle);
+end
+
+%% Plot Thrust
+figure(10) % Opens the first figure
+% Concatenate two stages
+timebot = [t;t2];
+thrusttotal = [Fthrust Fthrust2];
+
+% Plot the time v. thrust
+p = plot(timebot,thrusttotal);
+p.LineWidth = 2;
+title('Thrust Diagram') % Title
+xlabel('Time [Seconds]') % X label
+ylabel('Thrust [N]') % Y label
+xlim([0 .45]) % Shortens the x axis to avoid misc 0 values of thrust
+hold on
+%% Plot Distances
+figure(11) % Opens second figure
+
+% Remove values where z has gone below the surface of the Earth
+indices = find(ds2(:,6) < 0);
+ds2(indices,:) = [];
+
+% Concatenate two stages
+xpos=[ds(:,5);ds2(:,5)]; 
+zpos=[ds(:,6);ds2(:,6)];
+ypos=[ds(:,7);ds2(:,7)];
+
+p = plot3(xpos,ypos,zpos); % Plot height v. distance
+p.LineWidth = 2;
+title('Height v. Distance') % Title
+xlabel('Distance') % X label
+ylabel('Lateral Distance') % Y label
+zlabel('Height') % Z Label
+hold on
+
+figure(12)
+distanceTH(i+1) = ds2(end,5);
+plot(Theta(i+1), distanceTH(i+1), '-*')
+xlabel('Launch Angle (deg)')
+ylabel('Distance (m)')
+title('Firing Stand Launch Angle vs. Distance Traveled')
+axis([15 85 0 100])
+hold on
+end
+
+maxDTH = max(distanceTH);
+idealTH = volWater(find(distanceTH == maxDTH));
+%% Vary CDrag
+Theta = [];
+Theta = idealTH;
+for i = 0:1:20
+CDrag(i+1) = .2 + .0075*(2*i);  %[m^3] % Initial Volume of Water
+volAir=volBottle-volWater; % Volume of air in Bottle Initial
+mAir=((Pgage+Patm)*volAir)/(R*Tair); % Mass of Air Initital
+Athroat=pi*(Dthroat/2)^2; % Area of Throat 
+Abottle=pi*(Dbottle/2)^2; % Area of Bottle
+
+mWater = rhoWater * volWater; % Initial mass of water
+
+vw = [0;0;0]; % Initial velocity of the wind [Note these are negative because they add later]
+
+vx = 0 + vw(1); % Initial Velocity x
+vy = 0 + vw(2); % Initial Velocity y
+vz = 0 + vw(3); % Initial Velocity z
+
+%% Phase 1
+
+% First we create a state vector to put into ode45
+% [Volume Air, Velocities(x,y,z), Distances(x,y,z)
+state1Vec = [volAir vx vz vy x0 z0 y0]; 
+
+% Manual timestep helps ode45 accuracy
+tspan = 0:.00001:.5; % Create a time span, 0 to .5 seconds
+
+% Odeset triggers a cancel event in ode45
+optstage1 = odeset('Events',@opt1); % opt1.m outputs the cancel signal
+
+% Call to ode45 with state1func,state1vec,tspan, and optstage1
+[t, ds] = ode45(@(t,s) state1func(t,s,Cd,Athroat,gamma,...
+    rhoAtm,Patm,Pgage,volAir,Abottle,mBottle,mAir,CDrag(i+1),volBottle,...
+    rhoWater,vw), tspan, state1Vec, optstage1);
+
+% Initialize a vector of thrust values
+Fthrust=zeros(1,length(t));
+
+% For each value in the first time vector, we run the state func with our
+% full state matrix to get the thrust
+for z=1:length(t)
+    in1=t(z); % Time value at any time
+    in2=ds(z,:); % Row of the state matrix for time
+    [~,Fthrust(z)] = state1func(in1,in2,Cd,Athroat,gamma,rhoAtm,Patm,Pgage,volAir,...
+    Abottle,mBottle,mAir,CDrag(i+1),volBottle,rhoWater,vw);
+end
+
+%% Phase 2 
+% Define a new variable just to avoid confusion with initial mass of air
+m2 = mAir;
+Pair = Pgage + Patm; % Defines pressure of air inside bottle 
+
+% Initialize the second state vector based off previous conditions
+% [ mass_air x-vel z-vel y-vel dist-x dist-z dist-y]
+state2Vec = [m2;ds(end,2);ds(end,3);ds(end,4);ds(end,5);ds(end,6);ds(end,7)];
+
+% Time span for ode45
+tspan2 = t(end):.000001:6;
+
+% Call to ode45 for the second stage, similar to before
+optstage2 = odeset('Events',@opt2); % This function modifies ode45 to stop
+[t2,ds2] = ode45(@(t2,s) state2func(t2,s,mAir,gamma,Pair,volBottle,R,Patm,...
+    Athroat,Cd,Abottle,rhoAtm,volAir,CDrag(i+1),mBottle),tspan2, state2Vec,optstage2);
+
+% Exact same process as before, but for stage 2
+Fthrust2=zeros(1,length(t2));
+beta = zeros(1,length(t2)); % Also gets beta this time around 
+
+for y=1:length(t2)
+    in3=t2(y);
+    in4=ds2(y,:);
+    [~,Fthrust2(y),beta(y)] = state2func(in3,in4,mAir,gamma,Pair,volBottle,R,Patm,...
+    Athroat,Cd,Abottle,rhoAtm,volAir,CDrag(i+1),mBottle);
+end
+
+%% Plot Thrust
+figure(13) % Opens the first figure
+% Concatenate two stages
+timebot = [t;t2];
+thrusttotal = [Fthrust Fthrust2];
+
+% Plot the time v. thrust
+p = plot(timebot,thrusttotal);
+p.LineWidth = 2;
+title('Thrust Diagram') % Title
+xlabel('Time [Seconds]') % X label
+ylabel('Thrust [N]') % Y label
+xlim([0 .45]) % Shortens the x axis to avoid misc 0 values of thrust
+hold on
+%% Plot Distances
+figure(14) % Opens second figure
+
+% Remove values where z has gone below the surface of the Earth
+indices = find(ds2(:,6) < 0);
+ds2(indices,:) = [];
+
+% Concatenate two stages
+xpos=[ds(:,5);ds2(:,5)]; 
+zpos=[ds(:,6);ds2(:,6)];
+ypos=[ds(:,7);ds2(:,7)];
+
+p = plot3(xpos,ypos,zpos); % Plot height v. distance
+p.LineWidth = 2;
+title('Height v. Distance') % Title
+xlabel('Distance') % X label
+ylabel('Lateral Distance') % Y label
+zlabel('Height') % Z Label
+hold on
+
+figure(15)
+distanceCD(i+1) = ds2(end,5);
+plot(CDrag(i+1), distanceCD(i+1), '-*')
+xlabel('Coefficient of Drag')
+ylabel('Distance (m)')
+title('CD vs. Distance Traveled')
+axis([.15 .55 0 100])
+hold on
+end
+maxDCD = max(distanceCD);
+idealCD = volWater(find(distanceCD == maxDCD));
+%% Plotting
+
+% Take plotting elements from Sasha's code --> Graphs look nicer,
+% especially the specific points of transition being marked
+
+
+
+
+
+
+
+
