@@ -33,14 +33,14 @@ rhoWater=1000;          %[kg/m3] % Density of Water
 volBottle=.002;         %[m^3] % Empty bottle Volume
 Patm=83427;             %[Pa]   % Atmospheric Pressure
 gamma=1.4;              % Ratio of Specific Heats for Air
-Dthroat=.021;           %[m] % Diameter of Throat
-Dbottle=.105;           %[m] % Diameter of Bottle
+Dthroat=21.32/1000;     %[m] % Diameter of Throat
+Dbottle=107.5 / 1000;   %[m] % Diameter of Bottle
 R=287;                  % Universal Gas Constant Air
-mBottle=117/1000;       %[kg] % Mass of Empty Bottle
-CDrag=.3361;            % Drag Coefficient
+mBottle=130/1000;     %[kg] % Mass of Empty Bottle
+CDrag=.3773;            % Drag Coefficient
 Pgage=275790;           %[Pa] % Intial Gauge Pressure of air in bottle
-volWater=0.000962;      %[m^3] % Initial Volume of Water
-Tair=275.372;           %[K] % Initital Temp of Air
+volWater=0.001;         %[m^3] % Initial Volume of Water
+Tair=290.15;            %[K] % Initital Temp of Air
 v0=0;                   % [m/s] Initial Velocity
 theta=pi/4;             %[rad] % Initial Angle
 ls=.5;                  %[m] % Length of Test Stand
@@ -56,13 +56,12 @@ x0=0;   %[m] % Initial Horizontal Distance
 z0=.25; %[m] % Initial Vertical Distance
 y0 = 0; %[m] % Initial Lateral Distance
 
-% Wind angles
 launchTheta = 204; launchTheta = launchTheta * (pi/180);    % launch angle from North
 sufWindTh = 67.5; surWind = sufWindTh * (pi/180);           % surface wind from North
 alofWindTh = 22.5; alofWindTh = alofWindTh * (pi/180);      % aloft wind from North
 
 % Wind magnitudes
-sufWind = 1; sufWind = sufWind * 0.44704;                   % convert to m/s wind
+sufWind = 3; sufWind = sufWind * 0.44704;                   % convert to m/s wind
 alofWind = 3; alofWind = alofWind * 0.44704;                % convert to m/s wind
 
 % calculate relative downrange and crossrange wind components
